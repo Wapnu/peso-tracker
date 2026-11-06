@@ -180,11 +180,13 @@ function plan(){
   if(cur<0)cur=t<rows[0].a?0:rows.length-1;
   // Weekly budget: the most you can spend evenly every week from this week on without any later week going below 0.
   // Future weeks assume you spend exactly the budget in the weeks before them.
-  let planned=0;
+  // A weekly savings goal is kept out of the budget, so it builds up instead of being spent.
+  const goal=Math.max(0,+s.saveGoal||0);let planned=0,pot=0;
   for(let k=0;k<rows.length;k++){let b=Infinity;for(let j=k;j<rows.length;j++)b=Math.min(b,(rows[j].bal-planned)/(j-k+1));
-    const r=rows[k];r.budget=r2(Math.max(0,b));r.save=r2(r.free-r.budget);r.budgetLeft=r2(r.budget-r.spent);
-    if(k>=cur)planned=r2(planned+Math.max(0,r.budget-r.spent));
-    r.planBal=r2(r.bal-planned);r.status=r.bal<0?'short':r.planBal<500?'tight':'ok'}
+    const r=rows[k],g=Math.min(goal,Math.max(0,b));
+    r.goal=r2(g);r.budget=r2(Math.max(0,b-g));r.save=r2(r.free-r.budget);r.budgetLeft=r2(r.budget-r.spent);
+    if(k>=cur){planned=r2(planned+Math.max(0,r.budget-r.spent)+g);pot=r2(pot+g)}
+    r.pot=pot;r.planBal=r2(r.bal-planned+pot);r.status=r.bal<0?'short':r.budget<300?'tight':'ok'}
   let minAhead=Infinity,minRow=null;
   for(let i=cur;i<rows.length;i++)if(rows[i].bal<minAhead){minAhead=rows[i].bal;minRow=rows[i]}
   return{rows,cur,free,list,safe:Math.max(0,minAhead),minRow};
@@ -224,7 +226,7 @@ function home(){
    <div class="stat"><div class="l">Spending budget</div><div class="v ${w.budget<0?'neg':''}">${peso(w.budget)}</div></div>
    <div class="stat"><div class="l">Spent so far</div><div class="v">${peso(w.spent)}</div></div>
    <div class="stat"><div class="l">Budget left</div><div class="v ${w.budgetLeft<0?'neg':''}">${peso(w.budgetLeft)}</div></div>
-  </div><div class="small muted" style="margin-top:8px">From your ${peso(+st.settings.allowance)} allowance: ${peso(+st.settings.food)} food + ${peso(+st.settings.school)} school, then keep <b>${peso(w.save)}</b> for bills and spend up to <b>${peso(w.budget)}</b>. Spending the same budget every week keeps you from falling short later. Bills due this week: ${peso(w.billSum)}.</div></div>`;
+  </div><div class="small muted" style="margin-top:8px">From your ${peso(+st.settings.allowance)} allowance: ${peso(+st.settings.food)} food + ${peso(+st.settings.school)} school, then keep <b>${peso(w.save)}</b> for bills${+st.settings.saveGoal?` and savings`:''} and spend up to <b>${peso(w.budget)}</b>. Spending the same budget every week keeps you from falling short later. Bills due this week: ${peso(w.billSum)}.</div></div>`;
   h+=`<div class="card"><h2>Next bills</h2>${upcoming.length?upcoming.map(billRow).join(''):'<div class="muted">Nothing upcoming.</div>'}
    <div style="margin-top:8px"><button class="btn sm ghost" data-act="go" data-to="bills">All bills</button></div></div>`;
   h+=`<div class="card"><h2>Money on hand by week (no extra spending)</h2><svg id="chart" role="img" aria-label="Money on hand by week (no extra spending)"></svg><div id="chartTip">Tap a bar for details.</div></div>`;
@@ -232,12 +234,14 @@ function home(){
 }
 function savingsBox(p){
   const sv=+st.settings.savings||0;const res=p.list.filter(e=>e.fromSavings&&!st.paid[e.key]);
-  if(!sv&&!res.length)return'';
+  const last=p.rows[p.rows.length-1];
+  const goalRow=+st.settings.saveGoal?`<div class="row"><span class="muted small">Weekly savings goal ${peso(+st.settings.saveGoal)} → saved by ${fd(last.b)}</span><span class="amt">${peso(last.pot)}</span></div>`:'';
+  if(!sv&&!res.length)return goalRow;
   const resSum=r2(res.reduce((t,e)=>t+e.amount,0));const names=[...new Set(res.map(e=>e.name.split(' · ')[0]))].join(', ');
   let h=`<div class="row" style="margin-top:8px"><span class="muted">${esc(st.settings.savingsLabel||'Savings')} · not counted</span><span class="amt">${peso(sv)}</span></div>`;
   if(resSum)h+=`<div class="row"><span class="muted small">Reserved for ${esc(names)} (unpaid)</span><span class="amt">−${peso(resSum)}</span></div>
    <div class="row"><span class="muted small">Savings left after that</span><span class="amt ${sv-resSum<0?'neg':''}">${peso(r2(sv-resSum))}</span></div>`;
-  return h;
+  return h+goalRow;
 }
 function billRow(e){
   const paid=!!st.paid[e.key];
@@ -269,12 +273,12 @@ function drawChart(){
 
 function weeks(){
   const p=plan();
-  let h=`<div class="card"><h2>Week by week</h2><p class="small muted" style="margin-top:-4px">Weeks run payday (Thu) → Wed. <b>Save</b> = how much of that week's ${peso(p.free)} free cash to keep for bills. <b>Budget</b> = how much you can spend that week, the same amount every week, without falling short later. <b>Balance</b> = money you should have after that week if you spend your budget. A ₱0 budget with Short weeks means bills are bigger than your income until then.</p><div class="scroll"><table>
+  let h=`<div class="card"><h2>Week by week</h2><p class="small muted" style="margin-top:-4px">Weeks run payday (Thu) → Wed. <b>Save</b> = how much of that week's ${peso(p.free)} free cash to keep (for bills${+st.settings.saveGoal?` + your ${peso(+st.settings.saveGoal)} savings goal`:''}). <b>Budget</b> = how much you can spend that week, the same amount every week, without falling short later. <b>Balance</b> = money you should have after that week if you spend your budget. A ₱0 budget with Short weeks means bills are bigger than your income until then.</p><div class="scroll"><table>
   <tr><th>Week</th><th>Save</th><th>Budget</th><th>Spent</th><th>Balance</th><th></th></tr>`;
   for(const r of p.rows){
     h+=`<tr class="${r.k===p.cur?'cur':''}"><td>${fd(r.a)}</td><td>${pesoShort(r.save)}</td><td class="${r.budget<0?'neg':''}">${pesoShort(r.budget)}</td><td class="${r.spent>r.budget?'neg':''}">${r.spent?pesoShort(r.spent):'–'}</td><td><b class="${r.planBal<0?'neg':''}">${pesoShort(r.planBal)}</b></td><td><span class="pill ${r.status}">${r.status==='short'?'Short':r.status==='tight'?'Tight':'OK'}</span></td></tr>`;
   }
-  h+=`</table></div><p class="small muted">Tight = less than ₱500 left after that week.</p></div>`;
+  h+=`</table></div><p class="small muted">Tight = less than ₱300 to spend that week. Short = bills are bigger than your money that week.</p></div>`;
   const big=p.rows.filter(r=>r.billSum>0);
   h+=`<div class="card"><h2>What's due each week</h2>${big.map(r=>`<details><summary>${fd(r.a)} – ${fd(r.b)} · ${peso(r.billSum)}</summary>${r.bills.map(billRow).join('')}</details>`).join('')}</div>`;
   return h;
@@ -335,6 +339,7 @@ function setup(){
    <label class="f">Food / fridge per week${inp('settings.food',s.food,'number')}</label>
    <label class="f">School per week${inp('settings.school',s.school,'number')}</label>
    <label class="f">Spending money on hand at first payday${inp('settings.startCash',s.startCash,'number')}</label>
+   <label class="f">Weekly savings goal${inp('settings.saveGoal',s.saveGoal||0,'number')}</label>
    <label class="f">Savings kept aside (not used for bills)${inp('settings.savings',s.savings||0,'number')}</label>
    <label class="f full">Savings label${inp('settings.savingsLabel',s.savingsLabel||'Savings')}</label>
    <label class="f full">First payday tracked (weeks start on this weekday)${inp('settings.firstPayday',s.firstPayday,'date')}</label>

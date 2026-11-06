@@ -1,5 +1,5 @@
 // Offline cache for Peso Tracker. Bump VERSION when any file changes.
-const VERSION = 'peso-tracker-v3';
+const VERSION = 'peso-tracker-v4';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
