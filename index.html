@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Peso Tracker</title>
+<meta name="description" content="Offline weekly allowance, bills and pay-later installment tracker.">
+<meta name="theme-color" content="#ee4d2d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Peso Tracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --bg:#f6f5f3;--card:#fff;--ink:#1d1b19;--ink2:#5c5853;--muted:#8d8882;--line:#e7e3de;
+  --accent:#ee4d2d;--accent-soft:#fdece7;--bar:#2f6fbf;
+  --good:#1e7d45;--good-soft:#e3f3e8;--warn:#9a6300;--warn-soft:#fff3d6;--bad:#b42318;--bad-soft:#fde4e1;
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#131211;--card:#1e1c1a;--ink:#f2efeb;--ink2:#bcb6ae;--muted:#8a847c;--line:#34302c;
+  --accent:#ff6a47;--accent-soft:#3a201a;--bar:#6aa2e8;
+  --good:#5cc98a;--good-soft:#16301f;--warn:#f0b54a;--warn-soft:#352812;--bad:#ff7b6e;--bad-soft:#3d1a16;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(safe-area-inset-top) + 10px) 16px 8px;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:20px;margin:0;letter-spacing:-.2px}
+header .sub{color:var(--muted);font-size:12px}
+main{padding:0 14px calc(90px + env(safe-area-inset-bottom));max-width:760px;margin:0 auto}
+nav{position:fixed;bottom:0;left:0;right:0;z-index:6;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;background:none;color:var(--muted);font:600 11px/1 inherit;padding:10px 0 9px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--accent)}
+.card{background:var(--card);border-radius:var(--r);padding:14px;margin:0 0 12px;border:1px solid var(--line)}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 10px;font-weight:700}
+.hero{font-size:34px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--bg);border-radius:10px;padding:10px}
+.stat .l{font-size:12px;color:var(--muted)}
+.stat .v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .n{font-weight:600}.row .d{font-size:12px;color:var(--muted)}
+.amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px}
+.pill.ok{background:var(--good-soft);color:var(--good)}.pill.tight{background:var(--warn-soft);color:var(--warn)}.pill.short{background:var(--bad-soft);color:var(--bad)}
+.pill.paid{background:var(--good-soft);color:var(--good)}
+.neg{color:var(--bad)}
+.muted{color:var(--muted)}.small{font-size:12px}
+.banner{border-radius:12px;padding:12px;margin:0 0 12px;font-size:14px}
+.banner.warn{background:var(--warn-soft);color:var(--warn)}.banner.bad{background:var(--bad-soft);color:var(--bad)}.banner.info{background:var(--accent-soft);color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);text-align:right;padding:6px 4px;border-bottom:1px solid var(--line);font-weight:700}
+th:first-child,td:first-child{text-align:left}
+td{text-align:right;white-space:nowrap;padding:8px 4px;border-bottom:1px solid var(--line)}
+tr.cur td{background:var(--accent-soft)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;padding:0 14px}
+input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px;width:100%;min-width:0}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
+label.f{display:block;font-size:12px;color:var(--muted);margin:0 0 10px}
+label.f input,label.f select{margin-top:4px}
+.btn{font:600 14px/1 inherit;border:0;border-radius:10px;padding:11px 14px;background:var(--accent);color:#fff;cursor:pointer}
+.btn.ghost{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:var(--bad-soft);color:var(--bad)}
+.btn.sm{padding:7px 10px;font-size:12px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.x{border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 6px}
+.edit{display:grid;gap:8px;grid-template-columns:repeat(2,1fr);padding:10px 0;border-bottom:1px solid var(--line)}
+.edit .full{grid-column:1/-1}
+.edit .head{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center}
+.progress{height:6px;background:var(--bg);border-radius:9px;overflow:hidden;margin-top:6px}
+.progress i{display:block;height:100%;background:var(--accent);border-radius:9px}
+details summary{cursor:pointer;font-weight:600;padding:6px 0;list-style:none}
+details summary::-webkit-details-marker{display:none}
+details summary:after{content:" ▾";color:var(--muted)}
+#chart{width:100%;height:150px;display:block}
+#chartTip{font-size:12px;color:var(--ink2);min-height:18px;margin-top:4px}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;z-index:9;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+textarea{font:12px/1.3 ui-monospace,Menlo,monospace;width:100%;min-height:90px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="title">Peso Tracker</h1><div class="sub" id="subtitle"></div></div>
+  <span id="offline" class="pill tight" hidden>Offline</span>
+</header>
+<main id="app"></main>
+<nav id="nav">
+  <button data-tab="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+  <button data-tab="weeks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Weeks</button>
+  <button data-tab="bills"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Bills</button>
+  <button data-tab="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Log</button>
+  <button data-tab="setup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Setup</button>
+</nav>
+<div class="toast" id="toast"></div>
+<input type="file" id="fileIn" accept=".json,application/json" hidden>
+
+<script>
+'use strict';
+/* ---------- storage ---------- */
+const KEY='pesoTracker.v1';
+let st=null, tab='home', pendingImport=null;
+function load(){try{const s=localStorage.getItem(KEY);return s?JSON.parse(s):null}catch(e){return null}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){toast('Could not save on this device')}}
+function blank(){return{v:1,settings:{name:'',allowance:0,food:0,school:0,startCash:0,firstPayday:todayISO()},schedules:[],installments:[],subs:[],expenses:[],paid:{}}}
+const uid=()=>Math.random().toString(36).slice(2,9);
+
+/* ---------- dates (all as YYYY-MM-DD strings, UTC math) ---------- */
+const P=s=>{const[y,m,d]=s.split('-').map(Number);return Date.UTC(y,m-1,d)};
+const F=t=>new Date(t).toISOString().slice(0,10);
+const addDays=(s,n)=>F(P(s)+n*864e5);
+function addMonths(s,n){const[y,m,d]=s.split('-').map(Number);const tm=m-1+n;const Y=y+Math.floor(tm/12),M=((tm%12)+12)%12;return F(Date.UTC(Y,M,Math.min(d,dim(Y,M))))}
+const dim=(y,m)=>new Date(Date.UTC(y,m+1,0)).getUTCDate();
+function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fd=s=>{const[y,m,d]=s.split('-').map(Number);return d+' '+MON[m-1]};
+const fdy=s=>{const[y,m,d]=s.split('-').map(Number);return d+' '+MON[m-1]+' '+y};
+const fm=k=>{const[y,m]=k.split('-').map(Number);return MON[m-1]+' '+y};
+
+/* ---------- money ---------- */
+const r2=n=>Math.round((+n+Number.EPSILON)*100)/100;
+const peso=n=>(n<0?'−':'')+'₱'+Math.abs(n).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pesoShort=n=>(n<0?'−':'')+'₱'+Math.abs(Math.round(n)).toLocaleString('en-PH');
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- model ---------- */
+function instAmount(p,k){const n=+p.months||1,m=r2(p.total/n);return k<n-1?m:r2(p.total-m*(n-1))}
+function baseLedger(){
+  const out=[];
+  for(const b of st.schedules)for(const it of b.items)if(+it.amount&&it.due)
+    out.push({key:'s:'+b.id+':'+it.due,date:it.due,name:b.name,group:b.name,amount:+it.amount});
+  for(const p of st.installments){const n=+p.months||0;for(let k=0;k<n;k++)
+    out.push({key:'i:'+p.id+':'+k,date:addMonths(p.firstDue,k),name:p.name+' · '+(k+1)+'/'+n,group:p.via||'SPayLater',amount:instAmount(p,k),inst:p.id})}
+  return out;
+}
+function horizon(base){
+  let end=addDays(st.settings.firstPayday,7*12-1);
+  for(const e of base)if(e.date>end)end=e.date;
+  return end;
+}
+function ledger(){
+  const base=baseLedger(),end=horizon(base),start=st.settings.firstPayday;
+  const out=base.slice();
+  for(const s of st.subs){
+    let[y,m]=start.split('-').map(Number);m--;
+    while(true){const d=F(Date.UTC(y,m,Math.min(+s.day||1,dim(y,m))));if(d>end)break;
+      if(!s.until||d<=s.until)out.push({key:'u:'+s.id+':'+d.slice(0,7),date:d,name:s.name,group:'Subscriptions',amount:+s.amount,sub:true});
+      m++;if(m>11){m=0;y++}}
+  }
+  out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  return{list:out,end};
+}
+function plan(){
+  const s=st.settings,{list,end}=ledger();
+  const free=(+s.allowance)-(+s.food)-(+s.school);
+  const nW=Math.max(12,Math.ceil((P(end)-P(s.firstPayday))/864e5/7)+1);
+  let bal=+s.startCash;const rows=[];
+  for(let k=0;k<nW;k++){
+    const a=addDays(s.firstPayday,7*k),b=addDays(a,6);
+    const bills=list.filter(e=>e.date>=a&&e.date<=b);
+    const billSum=r2(bills.reduce((t,e)=>t+e.amount,0));
+    const exp=st.expenses.filter(e=>e.date>=a&&e.date<=b);
+    const spent=r2(exp.reduce((t,e)=>t+(+e.amount||0),0));
+    const left=r2(free-billSum-spent);bal=r2(bal+left);
+    rows.push({k,a,b,free,bills,billSum,spent,left,bal,status:bal<0?'short':bal<500?'tight':'ok'});
+  }
+  const t=todayISO();
+  let cur=rows.findIndex(r=>t>=r.a&&t<=r.b);
+  if(cur<0)cur=t<rows[0].a?0:rows.length-1;
+  let minAhead=Infinity,minRow=null;
+  for(let i=cur;i<rows.length;i++)if(rows[i].bal<minAhead){minAhead=rows[i].bal;minRow=rows[i]}
+  return{rows,cur,free,list,safe:Math.max(0,minAhead),minRow};
+}
+
+/* ---------- render ---------- */
+const app=document.getElementById('app');
+function render(){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  document.getElementById('title').textContent=st.settings.name?st.settings.name+"'s money":'Peso Tracker';
+  const empty=!st.settings.allowance&&!st.schedules.length&&!st.installments.length;
+  let h='';
+  if(pendingImport)h+=`<div class="banner info"><b>Import data from this link?</b><div class="small" style="margin:4px 0 10px">It replaces what's saved on this device.</div><div class="btns"><button class="btn sm" data-act="importLink">Import</button><button class="btn sm ghost" data-act="ignoreLink">Ignore</button></div></div>`;
+  if(empty&&tab!=='setup')h+=welcome();
+  else h+={home,weeks,bills,log,setup}[tab]();
+  app.innerHTML=h;
+  document.getElementById('subtitle').textContent=fdy(todayISO());
+  if(tab==='home'&&!empty)drawChart();
+}
+function welcome(){return`<div class="card"><h2>Welcome</h2><p>This tracker keeps everything on your device and works offline.</p>
+<div class="btns"><button class="btn" data-act="pickFile">Import backup file</button><button class="btn ghost" data-act="go" data-to="setup">Start from scratch</button></div>
+<p class="small muted" style="margin-top:12px">Have a data code? Paste it in Setup → Backup.</p></div>`}
+
+function home(){
+  const p=plan(),w=p.rows[p.cur],t=todayISO();
+  const upcoming=p.list.filter(e=>e.date>=t&&!st.paid[e.key]).slice(0,6);
+  const overdue=p.list.filter(e=>e.date<t&&e.date>=st.settings.firstPayday&&!st.paid[e.key]);
+  let h='';
+  if(overdue.length)h+=`<div class="banner bad">⚠ ${overdue.length} bill${overdue.length>1?'s':''} past due and not marked paid. <a href="#" data-act="go" data-to="bills" style="color:inherit"><b>Review</b></a></div>`;
+  const shortRow=p.rows.slice(p.cur).find(r=>r.bal<0);
+  if(shortRow)h+=`<div class="banner bad">You'll be short ${peso(-shortRow.bal)} in the week of ${fd(shortRow.a)}. Cut spending before then.</div>`;
+  h+=`<div class="card"><h2>Safe to spend now</h2><div class="hero">${peso(p.safe)}</div>
+  <div class="small muted">The most you can spend today without missing a future bill${p.minRow?` (tightest week: ${fd(p.minRow.a)})`:''}.</div>
+  ${+st.settings.savings?`<div class="row" style="margin-top:8px"><span class="muted">${esc(st.settings.savingsLabel||'Savings')} · not counted</span><span class="amt">${peso(+st.settings.savings)}</span></div>`:''}</div>`;
+  h+=`<div class="card"><h2>${t<w.a?'First tracked week':'This week'} · ${fd(w.a)} – ${fd(w.b)}</h2><div class="grid2">
+   <div class="stat"><div class="l">Free cash</div><div class="v">${peso(w.free)}</div></div>
+   <div class="stat"><div class="l">Bills due</div><div class="v">${peso(w.billSum)}</div></div>
+   <div class="stat"><div class="l">Logged spending</div><div class="v">${peso(w.spent)}</div></div>
+   <div class="stat"><div class="l">Left this week</div><div class="v ${w.left<0?'neg':''}">${peso(w.left)}</div></div>
+  </div><div class="small muted" style="margin-top:8px">Free cash = ${peso(+st.settings.allowance)} allowance − ${peso(+st.settings.food)} food − ${peso(+st.settings.school)} school. Running balance after this week: <b>${peso(w.bal)}</b>.</div></div>`;
+  h+=`<div class="card"><h2>Next bills</h2>${upcoming.length?upcoming.map(billRow).join(''):'<div class="muted">Nothing upcoming.</div>'}
+   <div style="margin-top:8px"><button class="btn sm ghost" data-act="go" data-to="bills">All bills</button></div></div>`;
+  h+=`<div class="card"><h2>Running balance by week</h2><svg id="chart" role="img" aria-label="Running balance by week"></svg><div id="chartTip">Tap a bar for details.</div></div>`;
+  return h;
+}
+function billRow(e){
+  const paid=!!st.paid[e.key];
+  return`<div class="row"><div><div class="n">${esc(e.name)}</div><div class="d">${fdy(e.date)} · ${esc(e.group)}</div></div>
+  <div style="display:flex;align-items:center;gap:10px"><span class="amt">${peso(e.amount)}</span>
+  <input type="checkbox" aria-label="Mark paid" data-act="paid" data-key="${e.key}" ${paid?'checked':''}></div></div>`;
+}
+function drawChart(){
+  const p=plan(),svg=document.getElementById('chart');if(!svg)return;
+  const W=svg.clientWidth||340,H=150,pad={t:8,b:18,l:2,r:2};
+  const vals=p.rows.map(r=>r.bal),max=Math.max(0,...vals),min=Math.min(0,...vals);
+  const y=v=>pad.t+(max-v)/((max-min)||1)*(H-pad.t-pad.b);
+  const n=vals.length,bw=(W-pad.l-pad.r)/n,gap=Math.min(2,bw*.25);
+  let s=`<line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>`;
+  p.rows.forEach((r,i)=>{
+    const x=pad.l+i*bw+gap/2,y0=y(0),y1=y(r.bal),top=Math.min(y0,y1),hh=Math.max(1,Math.abs(y1-y0));
+    const col=r.bal<0?'var(--bad)':'var(--bar)',op=i===p.cur?1:(i<p.cur?.35:.75);
+    s+=`<rect x="${x}" y="${top}" width="${Math.max(1,bw-gap)}" height="${hh}" rx="2" fill="${col}" opacity="${op}"/>`;
+    s+=`<rect x="${pad.l+i*bw}" y="0" width="${bw}" height="${H}" fill="transparent" data-i="${i}"/>`;
+  });
+  const lab=[0,p.cur,n-1].filter((v,i,a)=>a.indexOf(v)===i);
+  lab.forEach(i=>{const x=pad.l+i*bw+bw/2;s+=`<text x="${x}" y="${H-4}" font-size="10" fill="var(--muted)" text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${i===p.cur?'now':fd(p.rows[i].a)}</text>`});
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML=s;
+  const tip=document.getElementById('chartTip');
+  const show=ev=>{const i=ev.target.dataset&&ev.target.dataset.i;if(i==null)return;const r=p.rows[+i];
+    tip.innerHTML=`<b>${fd(r.a)}–${fd(r.b)}</b> · bills ${peso(r.billSum)} · balance <b class="${r.bal<0?'neg':''}">${peso(r.bal)}</b>`};
+  svg.onpointermove=show;svg.onclick=show;
+}
+
+function weeks(){
+  const p=plan();
+  let h=`<div class="card"><h2>Week by week</h2><p class="small muted" style="margin-top:-4px">Weeks run payday (Thu) → Wed. Each week starts with ${peso(p.free)} free cash; bills and logged spending come out, leftover carries forward.</p><div class="scroll"><table>
+  <tr><th>Week</th><th>Bills</th><th>Spent</th><th>Left</th><th>Balance</th><th></th></tr>`;
+  for(const r of p.rows){
+    h+=`<tr class="${r.k===p.cur?'cur':''}"><td>${fd(r.a)}</td><td>${r.billSum?pesoShort(r.billSum):'–'}</td><td>${r.spent?pesoShort(r.spent):'–'}</td><td class="${r.left<0?'neg':''}">${pesoShort(r.left)}</td><td><b class="${r.bal<0?'neg':''}">${pesoShort(r.bal)}</b></td><td><span class="pill ${r.status}">${r.status==='short'?'Short':r.status==='tight'?'Tight':'OK'}</span></td></tr>`;
+  }
+  h+=`</table></div><p class="small muted">Tight = less than ₱500 saved after that week.</p></div>`;
+  const big=p.rows.filter(r=>r.billSum>0);
+  h+=`<div class="card"><h2>What's due each week</h2>${big.map(r=>`<details><summary>${fd(r.a)} – ${fd(r.b)} · ${peso(r.billSum)}</summary>${r.bills.map(billRow).join('')}</details>`).join('')}</div>`;
+  return h;
+}
+
+function bills(){
+  const{list}=ledger(),t=todayISO();
+  const groups=[...new Set(list.map(e=>e.group))].sort((a,b)=>(a==='Subscriptions')-(b==='Subscriptions'));
+  const months={};for(const e of list){const k=e.date.slice(0,7);(months[k]=months[k]||{})[e.group]=r2((months[k][e.group]||0)+e.amount)}
+  let h=`<div class="card"><h2>Bills per month</h2><div class="scroll"><table><tr><th>Month</th>${groups.map(g=>`<th>${esc(g.replace(' PayLater',''))}</th>`).join('')}<th>Total</th></tr>`;
+  const tot={};let gt=0;
+  for(const k of Object.keys(months).sort()){let rt=0;h+=`<tr><td>${fm(k)}</td>`;
+    for(const g of groups){const v=months[k][g]||0;rt+=v;tot[g]=(tot[g]||0)+v;h+=`<td>${v?pesoShort(v):'–'}</td>`}
+    gt+=rt;h+=`<td><b>${pesoShort(rt)}</b></td></tr>`}
+  h+=`<tr><td><b>Total</b></td>${groups.map(g=>`<td><b>${pesoShort(tot[g])}</b></td>`).join('')}<td><b>${pesoShort(gt)}</b></td></tr></table></div></div>`;
+  if(st.installments.length){h+=`<div class="card"><h2>Installments</h2>`;
+    for(const p of st.installments){const n=+p.months,paid=[...Array(n).keys()].filter(k=>st.paid['i:'+p.id+':'+k]).length;
+      h+=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><span class="n">${esc(p.name)}</span><span class="amt">${peso(instAmount(p,0))}/mo</span></div>
+      <div class="d">${esc(p.shop||'')} · ${peso(+p.total)} over ${n} months · ${fd(p.firstDue)} → ${fdy(addMonths(p.firstDue,n-1))} · ${paid}/${n} paid</div>
+      <div class="progress"><i style="width:${n?paid/n*100:0}%"></i></div></div>`}
+    h+=`</div>`}
+  const upcoming=list.filter(e=>e.date>=st.settings.firstPayday);
+  const byMonth={};for(const e of upcoming)(byMonth[e.date.slice(0,7)]=byMonth[e.date.slice(0,7)]||[]).push(e);
+  h+=`<div class="card"><h2>Every payment · tick when paid</h2>`;
+  for(const k of Object.keys(byMonth).sort()){const open=k===t.slice(0,7)||k===addMonths(t.slice(0,7)+'-01',1).slice(0,7);
+    const unpaid=byMonth[k].filter(e=>!st.paid[e.key]).length;
+    h+=`<details ${open?'open':''}><summary>${fm(k)} <span class="muted small">· ${unpaid?unpaid+' unpaid':'all paid'}</span></summary>${byMonth[k].map(billRow).join('')}</details>`}
+  return h+`</div>`;
+}
+
+const CATS=['Food (extra)','Transport','Pickleball','Shopping','Load/Data','Going out','School (extra)','Other'];
+const METHODS=['Cash','GCash','Maya','SPayLater','Card','Other'];
+function log(){
+  let h=`<div class="card"><h2>Log spending</h2><p class="small muted" style="margin-top:-4px">For anything outside your fixed food and school budget. It comes out of that week's free cash.</p>
+  <form id="expForm" class="edit" style="border:0;padding:0">
+   <label class="f">Amount (₱)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0" required placeholder="0.00"></label>
+   <label class="f">Date<input name="date" type="date" value="${todayISO()}" required></label>
+   <label class="f">Category<select name="cat">${CATS.map(c=>`<option>${c}</option>`).join('')}</select></label>
+   <label class="f">Paid with<select name="method">${METHODS.map(c=>`<option>${c}</option>`).join('')}</select></label>
+   <label class="f full">What<input name="desc" placeholder="e.g. Grab to UST"></label>
+   <button class="btn full" type="submit">Add</button></form></div>`;
+  const p=plan();
+  const ex=st.expenses.slice().sort((a,b)=>a.date<b.date?1:-1);
+  if(!ex.length)return h+`<div class="card muted">No spending logged yet.</div>`;
+  const byCat={};for(const e of st.expenses){const w=p.rows[p.cur];if(e.date>=w.a&&e.date<=w.b)byCat[e.cat]=(byCat[e.cat]||0)+(+e.amount)}
+  if(Object.keys(byCat).length)h+=`<div class="card"><h2>This week by category</h2>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="row"><span>${esc(c)}</span><span class="amt">${peso(v)}</span></div>`).join('')}</div>`;
+  h+=`<div class="card"><h2>History</h2>`;
+  for(const e of ex.slice(0,200))h+=`<div class="row"><div><div class="n">${esc(e.desc||e.cat)}</div><div class="d">${fdy(e.date)} · ${esc(e.cat)} · ${esc(e.method)}</div></div><div style="display:flex;align-items:center"><span class="amt">${peso(+e.amount)}</span><button class="x" aria-label="Delete" data-act="delExp" data-id="${e.id}">×</button></div></div>`;
+  return h+`</div>`;
+}
+
+function inp(path,val,type='text',extra=''){return`<input type="${type}" data-path="${path}" value="${esc(val)}" ${type==='number'?'inputmode="decimal" step="0.01"':''} ${extra}>`}
+function setup(){
+  const s=st.settings;
+  let h=`<div class="card"><h2>Weekly money</h2><div class="edit" style="border:0;padding:0">
+   <label class="f full">Your name<input type="text" data-path="settings.name" value="${esc(s.name)}"></label>
+   <label class="f">Weekly allowance${inp('settings.allowance',s.allowance,'number')}</label>
+   <label class="f">Food / fridge per week${inp('settings.food',s.food,'number')}</label>
+   <label class="f">School per week${inp('settings.school',s.school,'number')}</label>
+   <label class="f">Spending money on hand at first payday${inp('settings.startCash',s.startCash,'number')}</label>
+   <label class="f">Savings kept aside (not used for bills)${inp('settings.savings',s.savings||0,'number')}</label>
+   <label class="f full">Savings label${inp('settings.savingsLabel',s.savingsLabel||'Savings')}</label>
+   <label class="f full">First payday tracked (weeks start on this weekday)${inp('settings.firstPayday',s.firstPayday,'date')}</label>
+  </div></div>`;
+  h+=`<div class="card"><h2>Installments (0% interest)</h2><p class="small muted" style="margin-top:-4px">Total ÷ months; the last payment absorbs rounding.</p>`;
+  st.installments.forEach((p,i)=>{h+=`<div class="edit"><div class="head"><b>${esc(p.name)||'New item'}</b><button class="x" data-act="del" data-list="installments" data-i="${i}">×</button></div>
+   <label class="f full">Item${inp(`installments.${i}.name`,p.name)}</label>
+   <label class="f">Shop${inp(`installments.${i}.shop`,p.shop)}</label>
+   <label class="f">Paid via${inp(`installments.${i}.via`,p.via||'SPayLater')}</label>
+   <label class="f">Total (₱)${inp(`installments.${i}.total`,p.total,'number')}</label>
+   <label class="f">Months${inp(`installments.${i}.months`,p.months,'number','step="1" min="1"')}</label>
+   <label class="f full">First due date${inp(`installments.${i}.firstDue`,p.firstDue,'date')}</label>
+   <div class="full small muted">= ${peso(instAmount(p,0))}/month × ${p.months}${+p.months>1&&instAmount(p,p.months-1)!==instAmount(p,0)?`, last ${peso(instAmount(p,p.months-1))}`:''}</div></div>`});
+  h+=`<div style="margin-top:10px"><button class="btn sm ghost" data-act="addInst">+ Add installment</button></div></div>`;
+  h+=`<div class="card"><h2>Pay-later statements</h2><p class="small muted" style="margin-top:-4px">Copy the amounts from each app's bill list.</p>`;
+  st.schedules.forEach((b,i)=>{h+=`<details class="edit" style="display:block"><summary>${esc(b.name)} · ${b.items.length} bills</summary>
+   <div style="display:flex;gap:8px;margin:6px 0"><input data-path="schedules.${i}.name" value="${esc(b.name)}"><button class="btn sm danger" data-act="del" data-list="schedules" data-i="${i}">Delete</button></div>`;
+   b.items.forEach((it,j)=>{h+=`<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:6px">${inp(`schedules.${i}.items.${j}.due`,it.due,'date')}${inp(`schedules.${i}.items.${j}.amount`,it.amount,'number')}<button class="x" data-act="delItem" data-i="${i}" data-j="${j}">×</button></div>`});
+   h+=`<button class="btn sm ghost" data-act="addItem" data-i="${i}">+ Add bill</button></details>`});
+  h+=`<div style="margin-top:10px"><button class="btn sm ghost" data-act="addSched">+ Add pay-later app</button></div></div>`;
+  h+=`<div class="card"><h2>Subscriptions</h2>`;
+  st.subs.forEach((s2,i)=>{h+=`<div class="edit"><div class="head"><b>${esc(s2.name)||'New'}</b><button class="x" data-act="del" data-list="subs" data-i="${i}">×</button></div>
+   <label class="f full">Name${inp(`subs.${i}.name`,s2.name)}</label>
+   <label class="f">₱ per month${inp(`subs.${i}.amount`,s2.amount,'number')}</label>
+   <label class="f">Billing day${inp(`subs.${i}.day`,s2.day,'number','step="1" min="1" max="31"')}</label>
+   ${s2.note?`<div class="full small muted">${esc(s2.note)}</div>`:''}</div>`});
+  h+=`<div style="margin-top:10px"><button class="btn sm ghost" data-act="addSub">+ Add subscription</button></div></div>`;
+  h+=`<div class="card"><h2>Backup & devices</h2><p class="small muted" style="margin-top:-4px">Data lives only on this device. Back it up, or move it to another device with a code.</p>
+   <div class="btns"><button class="btn sm" data-act="export">Download backup</button><button class="btn sm ghost" data-act="pickFile">Import backup</button><button class="btn sm ghost" data-act="copyCode">Copy data code</button></div>
+   <p class="small muted" style="margin:12px 0 4px">Paste a data code:</p><textarea id="codeIn" placeholder="Paste code here"></textarea>
+   <div class="btns" style="margin-top:8px"><button class="btn sm ghost" data-act="pasteCode">Load code</button><button class="btn sm danger" data-act="reset">Erase all data</button></div></div>
+   <p class="small muted" style="text-align:center">Open source · works offline · nothing leaves your device</p>`;
+  return h;
+}
+
+/* ---------- import/export ---------- */
+function enc(o){const b=new TextEncoder().encode(JSON.stringify(o));let s='';b.forEach(c=>s+=String.fromCharCode(c));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function dec(code){code=code.trim().replace(/^.*#data=/,'').replace(/-/g,'+').replace(/_/g,'/');while(code.length%4)code+='=';const s=atob(code);const b=Uint8Array.from(s,c=>c.charCodeAt(0));return JSON.parse(new TextDecoder().decode(b))}
+function valid(o){return o&&o.settings&&Array.isArray(o.installments)&&Array.isArray(o.schedules)}
+function adopt(o){o.subs=o.subs||[];o.expenses=o.expenses||[];o.paid=o.paid||{};st=o;save();render();toast('Data loaded')}
+
+/* ---------- events ---------- */
+document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.tab;render();scrollTo(0,0)});
+app.addEventListener('change',e=>{
+  const el=e.target;
+  if(el.dataset.act==='paid'){st.paid[el.dataset.key]=el.checked;if(!el.checked)delete st.paid[el.dataset.key];save();render();return}
+  const path=el.dataset.path;if(!path)return;
+  const parts=path.split('.');let o=st;for(let i=0;i<parts.length-1;i++)o=o[parts[i]];
+  const last=parts[parts.length-1];o[last]=el.type==='number'?(el.value===''?0:+el.value):el.value;
+  save();render();
+});
+app.addEventListener('submit',e=>{
+  if(e.target.id!=='expForm')return;e.preventDefault();
+  const f=new FormData(e.target);const amt=+f.get('amount');if(!(amt>0))return;
+  st.expenses.push({id:uid(),date:f.get('date'),cat:f.get('cat'),method:f.get('method'),desc:f.get('desc'),amount:amt});
+  save();render();toast('Added '+peso(amt));
+});
+app.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');if(!el||el.dataset.act==='paid')return;
+  const a=el.dataset.act;
+  if(el.tagName==='A')e.preventDefault();
+  if(a==='go'){tab=el.dataset.to;render();scrollTo(0,0)}
+  else if(a==='delExp'){st.expenses=st.expenses.filter(x=>x.id!==el.dataset.id);save();render()}
+  else if(a==='del'){st[el.dataset.list].splice(+el.dataset.i,1);save();render()}
+  else if(a==='addInst'){st.installments.push({id:uid(),name:'',shop:'',via:'SPayLater',total:0,months:3,firstDue:addMonths(todayISO().slice(0,8)+'15',1)});save();render()}
+  else if(a==='addSub'){st.subs.push({id:uid(),name:'',amount:0,day:1});save();render()}
+  else if(a==='addSched'){st.schedules.push({id:uid(),name:'New pay-later',items:[]});save();render()}
+  else if(a==='addItem'){const b=st.schedules[+el.dataset.i];const lastDue=b.items.length?b.items[b.items.length-1].due:todayISO().slice(0,8)+'15';b.items.push({due:b.items.length?addMonths(lastDue,1):lastDue,amount:0});save();render();document.querySelectorAll('details')[+el.dataset.i]?.setAttribute('open','')}
+  else if(a==='delItem'){st.schedules[+el.dataset.i].items.splice(+el.dataset.j,1);save();render()}
+  else if(a==='export'){const blob=new Blob([JSON.stringify(st,null,1)],{type:'application/json'});const u=URL.createObjectURL(blob);const l=document.createElement('a');l.href=u;l.download='peso-tracker-backup-'+todayISO()+'.json';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
+  else if(a==='pickFile'){document.getElementById('fileIn').click()}
+  else if(a==='copyCode'){const c=enc(st);(navigator.clipboard?navigator.clipboard.writeText(c):Promise.reject()).then(()=>toast('Code copied'),()=>{const t=document.getElementById('codeIn');t.value=c;t.select();toast('Copy the code from the box')})}
+  else if(a==='pasteCode'){try{const o=dec(document.getElementById('codeIn').value);if(!valid(o))throw 0;adopt(o)}catch(_){toast('That code is not valid')}}
+  else if(a==='reset'){if(el.dataset.sure){st=blank();save();tab='home';render();toast('Erased')}else{el.dataset.sure=1;el.textContent='Tap again to erase'}}
+  else if(a==='importLink'){adopt(pendingImport);pendingImport=null;render()}
+  else if(a==='ignoreLink'){pendingImport=null;render()}
+});
+document.getElementById('fileIn').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const o=JSON.parse(r.result);if(!valid(o))throw 0;adopt(o)}catch(_){toast('Not a valid backup file')}};
+  r.readAsText(f);e.target.value='';
+});
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
+function net(){document.getElementById('offline').hidden=navigator.onLine}
+addEventListener('online',net);addEventListener('offline',net);
+addEventListener('resize',()=>{if(tab==='home')drawChart()});
+
+/* ---------- boot ---------- */
+st=load()||blank();
+if(location.hash.startsWith('#data=')){
+  try{const o=dec(location.hash);if(valid(o)){const empty=!st.settings.allowance&&!st.installments.length&&!st.schedules.length;if(empty)adopt(o);else pendingImport=o}}catch(_){}
+  history.replaceState(null,'',location.pathname+location.search);
+}
+net();render();
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
