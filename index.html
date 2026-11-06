@@ -136,7 +136,7 @@ function baseLedger(){
   for(const b of st.schedules)for(const it of b.items)if(+it.amount&&it.due)
     out.push({key:'s:'+b.id+':'+it.due,date:it.due,name:b.name,group:b.name,amount:+it.amount});
   for(const p of st.installments){const n=+p.months||0;for(let k=0;k<n;k++)
-    out.push({key:'i:'+p.id+':'+k,date:addMonths(p.firstDue,k),name:p.name+' · '+(k+1)+'/'+n,group:p.via||'SPayLater',amount:instAmount(p,k),inst:p.id})}
+    out.push({key:'i:'+p.id+':'+k,date:addMonths(p.firstDue,k),name:p.name+' · '+(k+1)+'/'+n,group:(p.via||'SPayLater')+(p.fromSavings?' (savings)':''),amount:instAmount(p,k),inst:p.id,fromSavings:!!p.fromSavings})}
   return out;
 }
 function horizon(base){
@@ -148,6 +148,11 @@ function ledger(){
   const base=baseLedger(),end=horizon(base),start=st.settings.firstPayday;
   const out=base.slice();
   for(const s of st.subs){
+    const every=Math.max(1,Math.round(+s.every||1));
+    if(every>1){if(!s.next)continue;
+      for(let k=-60;k<200;k++){const d=addMonths(s.next,every*k);if(d>end)break;if(d<start.slice(0,8)+'01')continue;
+        out.push({key:'u:'+s.id+':'+d,date:d,name:s.name,group:'Subscriptions',amount:+s.amount,sub:true})}
+      continue}
     let[y,m]=start.split('-').map(Number);m--;
     while(true){const d=F(Date.UTC(y,m,Math.min(+s.day||1,dim(y,m))));if(d>end)break;
       if(!s.until||d<=s.until)out.push({key:'u:'+s.id+':'+d.slice(0,7),date:d,name:s.name,group:'Subscriptions',amount:+s.amount,sub:true});
@@ -163,7 +168,7 @@ function plan(){
   let bal=+s.startCash;const rows=[];
   for(let k=0;k<nW;k++){
     const a=addDays(s.firstPayday,7*k),b=addDays(a,6);
-    const bills=list.filter(e=>e.date>=a&&e.date<=b);
+    const bills=list.filter(e=>!e.fromSavings&&e.date>=a&&e.date<=b);
     const billSum=r2(bills.reduce((t,e)=>t+e.amount,0));
     const exp=st.expenses.filter(e=>e.date>=a&&e.date<=b);
     const spent=r2(exp.reduce((t,e)=>t+(+e.amount||0),0));
@@ -173,6 +178,13 @@ function plan(){
   const t=todayISO();
   let cur=rows.findIndex(r=>t>=r.a&&t<=r.b);
   if(cur<0)cur=t<rows[0].a?0:rows.length-1;
+  // Weekly budget: the most you can spend evenly every week from this week on without any later week going below 0.
+  // Future weeks assume you spend exactly the budget in the weeks before them.
+  let planned=0;
+  for(let k=0;k<rows.length;k++){let b=Infinity;for(let j=k;j<rows.length;j++)b=Math.min(b,(rows[j].bal-planned)/(j-k+1));
+    const r=rows[k];r.budget=r2(Math.max(0,b));r.save=r2(r.free-r.budget);r.budgetLeft=r2(r.budget-r.spent);
+    if(k>=cur)planned=r2(planned+Math.max(0,r.budget-r.spent));
+    r.planBal=r2(r.bal-planned);r.status=r.bal<0?'short':r.planBal<500?'tight':'ok'}
   let minAhead=Infinity,minRow=null;
   for(let i=cur;i<rows.length;i++)if(rows[i].bal<minAhead){minAhead=rows[i].bal;minRow=rows[i]}
   return{rows,cur,free,list,safe:Math.max(0,minAhead),minRow};
@@ -206,16 +218,25 @@ function home(){
   if(shortRow)h+=`<div class="banner bad">You'll be short ${peso(-shortRow.bal)} in the week of ${fd(shortRow.a)}. Cut spending before then.</div>`;
   h+=`<div class="card"><h2>Safe to spend now</h2><div class="hero">${peso(p.safe)}</div>
   <div class="small muted">The most you can spend today without missing a future bill${p.minRow?` (tightest week: ${fd(p.minRow.a)})`:''}.</div>
-  ${+st.settings.savings?`<div class="row" style="margin-top:8px"><span class="muted">${esc(st.settings.savingsLabel||'Savings')} · not counted</span><span class="amt">${peso(+st.settings.savings)}</span></div>`:''}</div>`;
+  ${savingsBox(p)}</div>`;
   h+=`<div class="card"><h2>${t<w.a?'First tracked week':'This week'} · ${fd(w.a)} – ${fd(w.b)}</h2><div class="grid2">
-   <div class="stat"><div class="l">Free cash</div><div class="v">${peso(w.free)}</div></div>
-   <div class="stat"><div class="l">Bills due</div><div class="v">${peso(w.billSum)}</div></div>
-   <div class="stat"><div class="l">Logged spending</div><div class="v">${peso(w.spent)}</div></div>
-   <div class="stat"><div class="l">Left this week</div><div class="v ${w.left<0?'neg':''}">${peso(w.left)}</div></div>
-  </div><div class="small muted" style="margin-top:8px">Free cash = ${peso(+st.settings.allowance)} allowance − ${peso(+st.settings.food)} food − ${peso(+st.settings.school)} school. Running balance after this week: <b>${peso(w.bal)}</b>.</div></div>`;
+   <div class="stat"><div class="l">Save for bills</div><div class="v">${peso(w.save)}</div></div>
+   <div class="stat"><div class="l">Spending budget</div><div class="v ${w.budget<0?'neg':''}">${peso(w.budget)}</div></div>
+   <div class="stat"><div class="l">Spent so far</div><div class="v">${peso(w.spent)}</div></div>
+   <div class="stat"><div class="l">Budget left</div><div class="v ${w.budgetLeft<0?'neg':''}">${peso(w.budgetLeft)}</div></div>
+  </div><div class="small muted" style="margin-top:8px">From your ${peso(+st.settings.allowance)} allowance: ${peso(+st.settings.food)} food + ${peso(+st.settings.school)} school, then keep <b>${peso(w.save)}</b> for bills and spend up to <b>${peso(w.budget)}</b>. Spending the same budget every week keeps you from falling short later. Bills due this week: ${peso(w.billSum)}.</div></div>`;
   h+=`<div class="card"><h2>Next bills</h2>${upcoming.length?upcoming.map(billRow).join(''):'<div class="muted">Nothing upcoming.</div>'}
    <div style="margin-top:8px"><button class="btn sm ghost" data-act="go" data-to="bills">All bills</button></div></div>`;
-  h+=`<div class="card"><h2>Running balance by week</h2><svg id="chart" role="img" aria-label="Running balance by week"></svg><div id="chartTip">Tap a bar for details.</div></div>`;
+  h+=`<div class="card"><h2>Money on hand by week (no extra spending)</h2><svg id="chart" role="img" aria-label="Money on hand by week (no extra spending)"></svg><div id="chartTip">Tap a bar for details.</div></div>`;
+  return h;
+}
+function savingsBox(p){
+  const sv=+st.settings.savings||0;const res=p.list.filter(e=>e.fromSavings&&!st.paid[e.key]);
+  if(!sv&&!res.length)return'';
+  const resSum=r2(res.reduce((t,e)=>t+e.amount,0));const names=[...new Set(res.map(e=>e.name.split(' · ')[0]))].join(', ');
+  let h=`<div class="row" style="margin-top:8px"><span class="muted">${esc(st.settings.savingsLabel||'Savings')} · not counted</span><span class="amt">${peso(sv)}</span></div>`;
+  if(resSum)h+=`<div class="row"><span class="muted small">Reserved for ${esc(names)} (unpaid)</span><span class="amt">−${peso(resSum)}</span></div>
+   <div class="row"><span class="muted small">Savings left after that</span><span class="amt ${sv-resSum<0?'neg':''}">${peso(r2(sv-resSum))}</span></div>`;
   return h;
 }
 function billRow(e){
@@ -248,12 +269,12 @@ function drawChart(){
 
 function weeks(){
   const p=plan();
-  let h=`<div class="card"><h2>Week by week</h2><p class="small muted" style="margin-top:-4px">Weeks run payday (Thu) → Wed. Each week starts with ${peso(p.free)} free cash; bills and logged spending come out, leftover carries forward.</p><div class="scroll"><table>
-  <tr><th>Week</th><th>Bills</th><th>Spent</th><th>Left</th><th>Balance</th><th></th></tr>`;
+  let h=`<div class="card"><h2>Week by week</h2><p class="small muted" style="margin-top:-4px">Weeks run payday (Thu) → Wed. <b>Save</b> = how much of that week's ${peso(p.free)} free cash to keep for bills. <b>Budget</b> = how much you can spend that week, the same amount every week, without falling short later. <b>Balance</b> = money you should have after that week if you spend your budget. A ₱0 budget with Short weeks means bills are bigger than your income until then.</p><div class="scroll"><table>
+  <tr><th>Week</th><th>Save</th><th>Budget</th><th>Spent</th><th>Balance</th><th></th></tr>`;
   for(const r of p.rows){
-    h+=`<tr class="${r.k===p.cur?'cur':''}"><td>${fd(r.a)}</td><td>${r.billSum?pesoShort(r.billSum):'–'}</td><td>${r.spent?pesoShort(r.spent):'–'}</td><td class="${r.left<0?'neg':''}">${pesoShort(r.left)}</td><td><b class="${r.bal<0?'neg':''}">${pesoShort(r.bal)}</b></td><td><span class="pill ${r.status}">${r.status==='short'?'Short':r.status==='tight'?'Tight':'OK'}</span></td></tr>`;
+    h+=`<tr class="${r.k===p.cur?'cur':''}"><td>${fd(r.a)}</td><td>${pesoShort(r.save)}</td><td class="${r.budget<0?'neg':''}">${pesoShort(r.budget)}</td><td class="${r.spent>r.budget?'neg':''}">${r.spent?pesoShort(r.spent):'–'}</td><td><b class="${r.planBal<0?'neg':''}">${pesoShort(r.planBal)}</b></td><td><span class="pill ${r.status}">${r.status==='short'?'Short':r.status==='tight'?'Tight':'OK'}</span></td></tr>`;
   }
-  h+=`</table></div><p class="small muted">Tight = less than ₱500 saved after that week.</p></div>`;
+  h+=`</table></div><p class="small muted">Tight = less than ₱500 left after that week.</p></div>`;
   const big=p.rows.filter(r=>r.billSum>0);
   h+=`<div class="card"><h2>What's due each week</h2>${big.map(r=>`<details><summary>${fd(r.a)} – ${fd(r.b)} · ${peso(r.billSum)}</summary>${r.bills.map(billRow).join('')}</details>`).join('')}</div>`;
   return h;
@@ -326,6 +347,7 @@ function setup(){
    <label class="f">Total (₱)${inp(`installments.${i}.total`,p.total,'number')}</label>
    <label class="f">Months${inp(`installments.${i}.months`,p.months,'number','step="1" min="1"')}</label>
    <label class="f full">First due date${inp(`installments.${i}.firstDue`,p.firstDue,'date')}</label>
+   <label class="full" style="display:flex;gap:10px;align-items:center;font-size:14px"><input type="checkbox" data-path="installments.${i}.fromSavings" ${p.fromSavings?'checked':''}> Paid from savings, not from allowance</label>
    <div class="full small muted">= ${peso(instAmount(p,0))}/month × ${p.months}${+p.months>1&&instAmount(p,p.months-1)!==instAmount(p,0)?`, last ${peso(instAmount(p,p.months-1))}`:''}</div></div>`});
   h+=`<div style="margin-top:10px"><button class="btn sm ghost" data-act="addInst">+ Add installment</button></div></div>`;
   h+=`<div class="card"><h2>Pay-later statements</h2><p class="small muted" style="margin-top:-4px">Copy the amounts from each app's bill list.</p>`;
@@ -337,8 +359,9 @@ function setup(){
   h+=`<div class="card"><h2>Subscriptions</h2>`;
   st.subs.forEach((s2,i)=>{h+=`<div class="edit"><div class="head"><b>${esc(s2.name)||'New'}</b><button class="x" data-act="del" data-list="subs" data-i="${i}">×</button></div>
    <label class="f full">Name${inp(`subs.${i}.name`,s2.name)}</label>
-   <label class="f">₱ per month${inp(`subs.${i}.amount`,s2.amount,'number')}</label>
-   <label class="f">Billing day${inp(`subs.${i}.day`,s2.day,'number','step="1" min="1" max="31"')}</label>
+   <label class="f">₱ per charge${inp(`subs.${i}.amount`,s2.amount,'number')}</label>
+   <label class="f">Repeats every (months)${inp(`subs.${i}.every`,s2.every||1,'number','step="1" min="1"')}</label>
+   ${(+s2.every||1)>1?`<label class="f full">Next charge date${inp(`subs.${i}.next`,s2.next||'','date')}</label>`:`<label class="f">Billing day${inp(`subs.${i}.day`,s2.day,'number','step="1" min="1" max="31"')}</label>`}
    ${s2.note?`<div class="full small muted">${esc(s2.note)}</div>`:''}</div>`});
   h+=`<div style="margin-top:10px"><button class="btn sm ghost" data-act="addSub">+ Add subscription</button></div></div>`;
   h+=`<div class="card"><h2>Backup & devices</h2><p class="small muted" style="margin-top:-4px">Data lives only on this device. Back it up, or move it to another device with a code.</p>
@@ -362,7 +385,7 @@ app.addEventListener('change',e=>{
   if(el.dataset.act==='paid'){st.paid[el.dataset.key]=el.checked;if(!el.checked)delete st.paid[el.dataset.key];save();render();return}
   const path=el.dataset.path;if(!path)return;
   const parts=path.split('.');let o=st;for(let i=0;i<parts.length-1;i++)o=o[parts[i]];
-  const last=parts[parts.length-1];o[last]=el.type==='number'?(el.value===''?0:+el.value):el.value;
+  const last=parts[parts.length-1];o[last]=el.type==='checkbox'?el.checked:el.type==='number'?(el.value===''?0:+el.value):el.value;
   save();render();
 });
 app.addEventListener('submit',e=>{
