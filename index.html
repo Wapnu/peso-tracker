@@ -130,13 +130,18 @@ const pesoShort=n=>(n<0?'−':'')+'₱'+Math.abs(Math.round(n)).toLocaleString('
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- model ---------- */
-function instAmount(p,k){const n=+p.months||1,m=r2(p.total/n);return k<n-1?m:r2(p.total-m*(n-1))}
+// With a monthly amount from the bill, use it as-is (the last payment can differ by a few centavos via lastAdj).
+// Otherwise split the total evenly and let the last payment absorb the rounding.
+function instAmount(p,k){const n=+p.months||1;
+  if(+p.monthly)return k<n-1?+p.monthly:r2(+p.monthly+(+p.lastAdj||0));
+  const m=r2(p.total/n);return k<n-1?m:r2(p.total-m*(n-1))}
+function instTotal(p){let t=0;for(let k=0;k<(+p.months||0);k++)t+=instAmount(p,k);return r2(t)}
 function baseLedger(){
   const out=[];
   for(const b of st.schedules)for(const it of b.items)if(+it.amount&&it.due)
     out.push({key:'s:'+b.id+':'+it.due,date:it.due,name:b.name,group:b.name,amount:+it.amount});
   for(const p of st.installments){const n=+p.months||0;for(let k=0;k<n;k++)
-    out.push({key:'i:'+p.id+':'+k,date:addMonths(p.firstDue,k),name:p.name+' · '+(k+1)+'/'+n,group:(p.via||'SPayLater')+(p.fromSavings?' (savings)':''),amount:instAmount(p,k),inst:p.id,fromSavings:!!p.fromSavings})}
+    out.push({key:'i:'+p.id+':'+k,date:addMonths(p.firstDue,k),name:p.name+' · '+(k+1+(+p.paidBefore||0))+'/'+(n+(+p.paidBefore||0)),group:(p.via||'SPayLater')+(p.fromSavings?' (savings)':''),amount:instAmount(p,k),inst:p.id,fromSavings:!!p.fromSavings})}
   return out;
 }
 function horizon(base){
@@ -212,7 +217,7 @@ function welcome(){return`<div class="card"><h2>Welcome</h2><p>This tracker keep
 
 function home(){
   const p=plan(),w=p.rows[p.cur],t=todayISO();
-  const upcoming=p.list.filter(e=>e.date>=t&&!st.paid[e.key]).slice(0,6);
+  const upcoming=combine(p.list.filter(e=>e.date>=t&&!st.paid[e.key])).slice(0,6);
   const overdue=p.list.filter(e=>e.date<t&&e.date>=st.settings.firstPayday&&!st.paid[e.key]);
   let h='';
   if(overdue.length)h+=`<div class="banner bad">⚠ ${overdue.length} bill${overdue.length>1?'s':''} past due and not marked paid. <a href="#" data-act="go" data-to="bills" style="color:inherit"><b>Review</b></a></div>`;
@@ -243,7 +248,23 @@ function savingsBox(p){
    <div class="row"><span class="muted small">Savings left after that</span><span class="amt ${sv-resSum<0?'neg':''}">${peso(r2(sv-resSum))}</span></div>`;
   return h+goalRow;
 }
+// Bills from the same pay-later app on the same date show as one bill (that's how the app charges you).
+function combine(list){
+  const out=[],idx={};
+  for(const e of list){
+    if(e.group==='Subscriptions'){out.push(e);continue}
+    const base=e.group.replace(' (savings)',''),k=e.date+'|'+base;
+    if(idx[k]==null){idx[k]=out.length;out.push({date:e.date,group:base,parts:[e]})}else out[idx[k]].parts.push(e)}
+  return out.map(x=>!x.parts?x:x.parts.length>1?x:x.parts[0]);
+}
 function billRow(e){
+  if(e.parts){
+    const keys=e.parts.map(x=>x.key),paid=keys.every(k=>st.paid[k]);
+    const tot=r2(e.parts.reduce((t,x)=>t+x.amount,0)),sav=r2(e.parts.filter(x=>x.fromSavings).reduce((t,x)=>t+x.amount,0));
+    const lines=e.parts.map(x=>`<div class="row" style="padding:3px 0;border:0"><span>${esc(x.inst?x.name:'Regular bill')}${x.fromSavings?' <span class="muted">(savings)</span>':''}</span><span class="amt">${peso(x.amount)}</span></div>`).join('');
+    return`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="n">${esc(e.group)}</div><div class="d">${fdy(e.date)} · ${e.parts.length} items${sav?` · ${peso(sav)} from savings, ${peso(r2(tot-sav))} from allowance`:''}</div></div>
+    <div style="display:flex;align-items:center;gap:10px"><span class="amt">${peso(tot)}</span><input type="checkbox" aria-label="Mark paid" data-act="paid" data-keys="${keys.join(',')}" ${paid?'checked':''}></div></div>
+    <details style="margin-top:2px"><summary class="small muted" style="font-weight:400">What's in this bill</summary><div class="small">${lines}</div></details></div>`}
   const paid=!!st.paid[e.key];
   return`<div class="row"><div><div class="n">${esc(e.name)}</div><div class="d">${fdy(e.date)} · ${esc(e.group)}</div></div>
   <div style="display:flex;align-items:center;gap:10px"><span class="amt">${peso(e.amount)}</span>
@@ -280,7 +301,7 @@ function weeks(){
   }
   h+=`</table></div><p class="small muted">Tight = less than ₱300 to spend that week. Short = bills are bigger than your money that week.</p></div>`;
   const big=p.rows.filter(r=>r.billSum>0);
-  h+=`<div class="card"><h2>What's due each week</h2>${big.map(r=>`<details><summary>${fd(r.a)} – ${fd(r.b)} · ${peso(r.billSum)}</summary>${r.bills.map(billRow).join('')}</details>`).join('')}</div>`;
+  h+=`<div class="card"><h2>What's due each week</h2>${big.map(r=>`<details><summary>${fd(r.a)} – ${fd(r.b)} · ${peso(r.billSum)}</summary>${combine(p.list.filter(e=>e.date>=r.a&&e.date<=r.b)).map(billRow).join('')}</details>`).join('')}</div>`;
   return h;
 }
 
@@ -295,17 +316,18 @@ function bills(){
     gt+=rt;h+=`<td><b>${pesoShort(rt)}</b></td></tr>`}
   h+=`<tr><td><b>Total</b></td>${groups.map(g=>`<td><b>${pesoShort(tot[g])}</b></td>`).join('')}<td><b>${pesoShort(gt)}</b></td></tr></table></div></div>`;
   if(st.installments.length){h+=`<div class="card"><h2>Installments</h2>`;
-    for(const p of st.installments){const n=+p.months,paid=[...Array(n).keys()].filter(k=>st.paid['i:'+p.id+':'+k]).length;
+    for(const p of st.installments){const n=+p.months,pb=+p.paidBefore||0,N=n+pb,paid=pb+[...Array(n).keys()].filter(k=>st.paid['i:'+p.id+':'+k]).length;
+      const left=r2(instTotal(p)-[...Array(n).keys()].filter(k=>st.paid['i:'+p.id+':'+k]).reduce((t,k)=>t+instAmount(p,k),0));
       h+=`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><span class="n">${esc(p.name)}</span><span class="amt">${peso(instAmount(p,0))}/mo</span></div>
-      <div class="d">${esc(p.shop||'')} · ${peso(+p.total)} over ${n} months · ${fd(p.firstDue)} → ${fdy(addMonths(p.firstDue,n-1))} · ${paid}/${n} paid</div>
-      <div class="progress"><i style="width:${n?paid/n*100:0}%"></i></div></div>`}
+      <div class="d">${p.shop?esc(p.shop)+' · ':''}${paid}/${N} paid · ${peso(left)} left · last payment ${fdy(addMonths(p.firstDue,n-1))}${p.fromSavings?' · from savings':''}</div>
+      <div class="progress"><i style="width:${N?paid/N*100:0}%"></i></div></div>`}
     h+=`</div>`}
   const upcoming=list.filter(e=>e.date>=st.settings.firstPayday);
   const byMonth={};for(const e of upcoming)(byMonth[e.date.slice(0,7)]=byMonth[e.date.slice(0,7)]||[]).push(e);
   h+=`<div class="card"><h2>Every payment · tick when paid</h2>`;
   for(const k of Object.keys(byMonth).sort()){const open=k===t.slice(0,7)||k===addMonths(t.slice(0,7)+'-01',1).slice(0,7);
-    const unpaid=byMonth[k].filter(e=>!st.paid[e.key]).length;
-    h+=`<details ${open?'open':''}><summary>${fm(k)} <span class="muted small">· ${unpaid?unpaid+' unpaid':'all paid'}</span></summary>${byMonth[k].map(billRow).join('')}</details>`}
+    const rows=combine(byMonth[k]),unpaid=rows.filter(e=>e.parts?!e.parts.every(x=>st.paid[x.key]):!st.paid[e.key]).length;
+    h+=`<details ${open?'open':''}><summary>${fm(k)} <span class="muted small">· ${unpaid?unpaid+' unpaid':'all paid'}</span></summary>${rows.map(billRow).join('')}</details>`}
   return h+`</div>`;
 }
 
@@ -344,16 +366,18 @@ function setup(){
    <label class="f full">Savings label${inp('settings.savingsLabel',s.savingsLabel||'Savings')}</label>
    <label class="f full">First payday tracked (weeks start on this weekday)${inp('settings.firstPayday',s.firstPayday,'date')}</label>
   </div></div>`;
-  h+=`<div class="card"><h2>Installments (0% interest)</h2><p class="small muted" style="margin-top:-4px">Total ÷ months; the last payment absorbs rounding.</p>`;
+  h+=`<div class="card"><h2>Installments</h2><p class="small muted" style="margin-top:-4px">Copy the monthly amount from your bill when you have it. Otherwise the total is split evenly across the months.</p>`;
   st.installments.forEach((p,i)=>{h+=`<div class="edit"><div class="head"><b>${esc(p.name)||'New item'}</b><button class="x" data-act="del" data-list="installments" data-i="${i}">×</button></div>
    <label class="f full">Item${inp(`installments.${i}.name`,p.name)}</label>
    <label class="f">Shop${inp(`installments.${i}.shop`,p.shop)}</label>
    <label class="f">Paid via${inp(`installments.${i}.via`,p.via||'SPayLater')}</label>
-   <label class="f">Total (₱)${inp(`installments.${i}.total`,p.total,'number')}</label>
-   <label class="f">Months${inp(`installments.${i}.months`,p.months,'number','step="1" min="1"')}</label>
-   <label class="f full">First due date${inp(`installments.${i}.firstDue`,p.firstDue,'date')}</label>
+   <label class="f">Monthly payment (from bill)${inp(`installments.${i}.monthly`,p.monthly||'','number','placeholder="optional"')}</label>
+   <label class="f">Total (used if no monthly)${inp(`installments.${i}.total`,p.total,'number')}</label>
+   <label class="f">Payments left${inp(`installments.${i}.months`,p.months,'number','step="1" min="1"')}</label>
+   <label class="f">Payments already made${inp(`installments.${i}.paidBefore`,p.paidBefore||0,'number','step="1" min="0"')}</label>
+   <label class="f full">Next due date${inp(`installments.${i}.firstDue`,p.firstDue,'date')}</label>
    <label class="full" style="display:flex;gap:10px;align-items:center;font-size:14px"><input type="checkbox" data-path="installments.${i}.fromSavings" ${p.fromSavings?'checked':''}> Paid from savings, not from allowance</label>
-   <div class="full small muted">= ${peso(instAmount(p,0))}/month × ${p.months}${+p.months>1&&instAmount(p,p.months-1)!==instAmount(p,0)?`, last ${peso(instAmount(p,p.months-1))}`:''}</div></div>`});
+   <div class="full small muted">= ${peso(instAmount(p,0))}/month × ${p.months} = ${peso(instTotal(p))} left to pay${+p.months>1&&instAmount(p,p.months-1)!==instAmount(p,0)?` (last ${peso(instAmount(p,p.months-1))})`:''}${+p.price&&instTotal(p)>+p.price+0.5&&!(+p.paidBefore)?` · ${peso(r2(instTotal(p)-p.price))} more than the ${peso(+p.price)} price`:''}</div></div>`});
   h+=`<div style="margin-top:10px"><button class="btn sm ghost" data-act="addInst">+ Add installment</button></div></div>`;
   h+=`<div class="card"><h2>Pay-later statements</h2><p class="small muted" style="margin-top:-4px">Copy the amounts from each app's bill list.</p>`;
   st.schedules.forEach((b,i)=>{h+=`<details class="edit" style="display:block"><summary>${esc(b.name)} · ${b.items.length} bills</summary>
@@ -387,7 +411,7 @@ function adopt(o){o.subs=o.subs||[];o.expenses=o.expenses||[];o.paid=o.paid||{};
 document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.tab;render();scrollTo(0,0)});
 app.addEventListener('change',e=>{
   const el=e.target;
-  if(el.dataset.act==='paid'){st.paid[el.dataset.key]=el.checked;if(!el.checked)delete st.paid[el.dataset.key];save();render();return}
+  if(el.dataset.act==='paid'){for(const k of (el.dataset.keys||el.dataset.key).split(',')){if(el.checked)st.paid[k]=true;else delete st.paid[k]}save();render();return}
   const path=el.dataset.path;if(!path)return;
   const parts=path.split('.');let o=st;for(let i=0;i<parts.length-1;i++)o=o[parts[i]];
   const last=parts[parts.length-1];o[last]=el.type==='checkbox'?el.checked:el.type==='number'?(el.value===''?0:+el.value):el.value;
